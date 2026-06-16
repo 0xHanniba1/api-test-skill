@@ -1,0 +1,23 @@
+[project]
+name = "api-test-skill"
+version = "0.1.0"
+description = "Agent-driven skill: API docs → test cases → pytest+requests code. The LLM work is done by the host agent (Claude Code / Codex); this project ships deterministic scripts + knowledge, no API keys."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.15",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+filterwarnings = ["ignore::pytest.PytestCollectionWarning"]
