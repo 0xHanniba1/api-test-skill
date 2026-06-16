@@ -1,5 +1,7 @@
 # api-test-skill
 
+English | [简体中文](README.zh-CN.md)
+
 Agent-driven skill that turns an API document into test cases and runnable
 **pytest + requests** code. The LLM work is done by the **host agent** (Claude
 Code / Codex) — this project ships only deterministic scripts plus reusable test
