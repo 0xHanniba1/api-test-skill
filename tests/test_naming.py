@@ -19,8 +19,8 @@ def _document(*headings: str):
     return parse_testcase_document("\n\n".join(sections))
 
 
-def _endpoint(tag: str) -> ApiEndpoint:
-    return ApiEndpoint(method="GET", path=f"/{tag}", tags=[tag])
+def _endpoint(tag: str, index: int = 1) -> ApiEndpoint:
+    return ApiEndpoint(method="GET", path=f"/endpoint-{index}", tags=[tag])
 
 
 def test_assign_endpoint_filename_uses_method_and_path():
@@ -44,7 +44,7 @@ def test_assign_endpoint_filename_resolves_slug_collisions_stably():
 
 
 def test_group_endpoints_by_tag_reuses_name_for_same_raw_tag():
-    endpoints = [_endpoint("Admin API"), _endpoint("Admin API")]
+    endpoints = [_endpoint("Admin API", 1), _endpoint("Admin API", 2)]
 
     groups = group_endpoints_by_tag(endpoints)
 
@@ -53,7 +53,7 @@ def test_group_endpoints_by_tag_reuses_name_for_same_raw_tag():
 
 
 def test_group_endpoints_by_tag_resolves_normalization_collisions():
-    endpoints = [_endpoint("Admin API"), _endpoint("admin-api")]
+    endpoints = [_endpoint("Admin API", 1), _endpoint("admin-api", 2)]
 
     groups = group_endpoints_by_tag(endpoints)
 

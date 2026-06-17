@@ -21,7 +21,7 @@ repeatable.
 | TC-XXX numbering, canonical Markdown rendering | Write pytest/requests code |
 | Syntax / YAML / pytest-collect validation | Self-heal failing validation |
 
-## Usage (Claude Code)
+## Usage (Claude Code / Codex)
 
 The agent reads `SKILL.md` → `instructions/workflow.md`, then:
 
@@ -40,7 +40,8 @@ uv run python scripts/validate.py out/           # syntax + YAML; agent reads er
 
 ```
 api-test-skill/
-├── SKILL.md              # Claude Code entry (Codex AGENTS.md entry: planned)
+├── SKILL.md              # Claude Code entry
+├── AGENTS.md             # Codex entry and repository rules
 ├── instructions/         # host-agnostic workflow + generation guidance
 │   ├── workflow.md  testcase-gen.md  code-gen-flat.md  code-gen-layered.md
 ├── knowledge/            # reusable test-design modules (base, pagination, auth, ...)

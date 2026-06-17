@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from _core.parser.detect import detect_format
+from _core.parser.detect import FormatDetectionError, detect_format
 from _core.parser.swagger import parse_openapi
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -16,6 +16,22 @@ class TestDetectFormat:
         f = tmp_path / "doc.md"
         f.write_text("# API Docs\nSome text")
         assert detect_format(f) == "markdown"
+
+    def test_detect_invalid_structured_file_fails_explicitly(self, tmp_path):
+        document = tmp_path / "broken.yaml"
+        document.write_text("openapi: [broken\n", encoding="utf-8")
+
+        with pytest.raises(FormatDetectionError, match="invalid YAML/JSON"):
+            detect_format(document)
+
+    def test_detect_unknown_structured_file_fails_explicitly(self, tmp_path):
+        document = tmp_path / "unknown.yaml"
+        document.write_text("info: {title: Missing API version}\n", encoding="utf-8")
+
+        with pytest.raises(
+            FormatDetectionError, match="unsupported structured API document"
+        ):
+            detect_format(document)
 
     def test_detect_swagger_2(self):
         assert detect_format(FIXTURES / "swagger2.yaml") == "swagger"

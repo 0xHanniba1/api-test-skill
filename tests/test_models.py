@@ -1,4 +1,6 @@
-from _core.parser.base import Param, ApiEndpoint
+import pytest
+
+from _core.parser.base import ApiEndpoint, Param
 
 
 class TestParam:
@@ -27,6 +29,29 @@ class TestParam:
         first.constraints["minimum"] = 1
 
         assert second.constraints == {}
+
+    def test_normalizes_name_and_type(self):
+        param = Param(name=" page ", location="query", param_type=" Integer ")
+
+        assert param.name == "page"
+        assert param.param_type == "integer"
+
+    def test_rejects_empty_name(self):
+        with pytest.raises(ValueError, match="parameter name"):
+            Param(name=" ", location="query")
+
+    def test_normalizes_location(self):
+        param = Param(name="tenant", location=" Header ")
+
+        assert param.location == "header"
+
+    def test_rejects_invalid_location(self):
+        with pytest.raises(ValueError, match="parameter location"):
+            Param(name="bad", location="body")
+
+    def test_rejects_invalid_type(self):
+        with pytest.raises(ValueError, match="parameter type"):
+            Param(name="bad", location="query", param_type="uuid")
 
 
 class TestApiEndpoint:
@@ -85,14 +110,27 @@ class TestApiEndpoint:
 
     def test_normalizes_method_path_and_content_types(self):
         endpoint = ApiEndpoint(
-            method="post",
-            path="users",
-            content_types=["multipart/form-data", "application/json"],
+            method=" post ",
+            path=" users ",
+            content_types=[
+                " Multipart/Form-Data ",
+                "application/json; charset=utf-8",
+                "multipart/form-data",
+            ],
         )
 
         assert endpoint.method == "POST"
         assert endpoint.path == "/users"
         assert endpoint.content_type == "multipart/form-data"
+        assert endpoint.content_types == ["multipart/form-data", "application/json"]
+
+    def test_rejects_invalid_method(self):
+        with pytest.raises(ValueError, match="HTTP method"):
+            ApiEndpoint(method="FETCH", path="/users")
+
+    def test_rejects_whitespace_inside_path(self):
+        with pytest.raises(ValueError, match="path must not contain whitespace"):
+            ApiEndpoint(method="GET", path="/bad path")
 
     def test_defaults_are_isolated(self):
         first = ApiEndpoint(method="GET", path="/first")

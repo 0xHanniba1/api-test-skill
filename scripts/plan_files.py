@@ -15,9 +15,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _core.endpoints import EndpointListError, validate_endpoint_list  # noqa: E402
 from _core.knowledge_loader import select_skills  # noqa: E402
 from _core.naming import (  # noqa: E402
     assign_endpoint_filenames,
@@ -27,9 +31,29 @@ from _core.parser.base import ApiEndpoint  # noqa: E402
 from _core.testcase_document import EndpointSection  # noqa: E402
 
 
+class EndpointLoadError(ValueError):
+    """Raised when endpoints JSON cannot be loaded or validated."""
+
+
 def _load_endpoints(path: Path) -> list[ApiEndpoint]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [ApiEndpoint.model_validate(item) for item in data]
+    try:
+        data: Any = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise EndpointLoadError(f"cannot read file: {error}") from error
+    except json.JSONDecodeError as error:
+        raise EndpointLoadError(f"invalid JSON: {error}") from error
+
+    if not isinstance(data, list):
+        raise EndpointLoadError("endpoints JSON must be an array")
+
+    try:
+        endpoints = [ApiEndpoint.model_validate(item) for item in data]
+        validate_endpoint_list(endpoints)
+        return endpoints
+    except ValidationError as error:
+        raise EndpointLoadError(f"invalid endpoint schema: {error}") from error
+    except EndpointListError as error:
+        raise EndpointLoadError(str(error)) from error
 
 
 def _plan_flat(endpoints: list[ApiEndpoint], depth: str) -> list[dict]:
@@ -79,7 +103,15 @@ def main() -> int:
     ap.add_argument("--arch", default="flat", choices=["flat", "layered"])
     args = ap.parse_args()
 
-    endpoints = _load_endpoints(args.endpoints)
+    try:
+        endpoints = _load_endpoints(args.endpoints)
+    except EndpointLoadError as error:
+        print(
+            f"Failed to load endpoints from {args.endpoints}: {error}",
+            file=sys.stderr,
+        )
+        return 1
+
     plan = (
         _plan_flat(endpoints, args.depth)
         if args.arch == "flat"

@@ -2,6 +2,8 @@ from pathlib import Path
 
 import json
 
+import pytest
+
 from _core.parser.postman import parse_postman
 from _core.parser.detect import detect_format
 
@@ -27,6 +29,79 @@ class TestPostmanParser:
         assert get_ep.path == "/api/users"
         assert len(get_ep.parameters) == 2
         assert get_ep.auth_required is False
+
+    def test_keeps_relative_raw_url_path_without_dropping_first_segment(self, tmp_path):
+        collection = {
+            "info": {
+                "name": "Relative URLs",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": [
+                {
+                    "name": "Relative path",
+                    "request": {"method": "GET", "url": "api/users"},
+                },
+                {
+                    "name": "Host path",
+                    "request": {
+                        "method": "GET",
+                        "url": "api.example.com/v1/users",
+                    },
+                },
+                {
+                    "name": "Host only",
+                    "request": {"method": "GET", "url": "api.example.com"},
+                },
+            ],
+        }
+        fixture = tmp_path / "relative.postman.json"
+        fixture.write_text(json.dumps(collection), encoding="utf-8")
+
+        endpoints = parse_postman(fixture)
+
+        assert [endpoint.path for endpoint in endpoints] == [
+            "/api/users",
+            "/v1/users",
+            "/",
+        ]
+
+    def test_parses_string_request_as_get_url(self, tmp_path):
+        collection = {
+            "info": {
+                "name": "String request",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": [{"name": "List Users", "request": "https://api.example.com/users"}],
+        }
+        fixture = tmp_path / "string-request.postman.json"
+        fixture.write_text(json.dumps(collection), encoding="utf-8")
+
+        endpoint = parse_postman(fixture)[0]
+
+        assert endpoint.method == "GET"
+        assert endpoint.path == "/users"
+        assert endpoint.summary == "List Users"
+
+    def test_rejects_invalid_collection_shape(self, tmp_path):
+        fixture = tmp_path / "invalid.postman.json"
+        fixture.write_text("[]", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="must be a mapping"):
+            parse_postman(fixture)
+
+    def test_rejects_invalid_collection_item_entry(self, tmp_path):
+        collection = {
+            "info": {
+                "name": "Invalid item",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+            },
+            "item": ["not an item object"],
+        }
+        fixture = tmp_path / "invalid-item.postman.json"
+        fixture.write_text(json.dumps(collection), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="item entries must be mappings"):
+            parse_postman(fixture)
 
     def test_parse_post_with_auth(self):
         endpoints = parse_postman(FIXTURES / "sample.postman.json")

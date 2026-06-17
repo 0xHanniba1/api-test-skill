@@ -16,7 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _core.parser.detect import detect_format  # noqa: E402
+from _core.endpoints import EndpointListError, validate_endpoint_list  # noqa: E402
+from _core.parser.detect import FormatDetectionError, detect_format  # noqa: E402
 from _core.parser.postman import parse_postman  # noqa: E402
 from _core.parser.swagger import parse_openapi  # noqa: E402
 
@@ -29,7 +30,15 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    fmt = detect_format(args.doc) if args.format == "auto" else args.format
+    try:
+        fmt = detect_format(args.doc) if args.format == "auto" else args.format
+    except (OSError, UnicodeDecodeError) as error:
+        print(f"Failed to read {args.doc}: {error}", file=sys.stderr)
+        return 1
+    except FormatDetectionError as error:
+        print(f"Failed to detect format for {args.doc}: {error}", file=sys.stderr)
+        return 1
+
     if fmt == "markdown":
         print(
             "This looks like a free-form/Markdown doc. Read it directly and extract "
@@ -46,6 +55,10 @@ def main() -> int:
         else:
             print(f"Unsupported format: {fmt}", file=sys.stderr)
             return 2
+        validate_endpoint_list(endpoints)
+    except EndpointListError as error:
+        print(f"Parsed endpoints are not usable: {error}", file=sys.stderr)
+        return 1
     except Exception as error:
         print(f"Failed to parse {args.doc}: {error}", file=sys.stderr)
         return 1

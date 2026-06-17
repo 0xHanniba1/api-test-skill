@@ -4,6 +4,12 @@ from pathlib import Path
 
 import yaml
 
+STRUCTURED_SUFFIXES = {".json", ".yaml", ".yml"}
+
+
+class FormatDetectionError(ValueError):
+    """Raised when a structured-looking API document cannot be parsed."""
+
 
 def detect_format(file_path: Path) -> str:
     """Detect the format of an API documentation file.
@@ -13,6 +19,7 @@ def detect_format(file_path: Path) -> str:
     text = file_path.read_text(encoding="utf-8")
 
     # Try YAML/JSON parsing
+    is_structured_file = file_path.suffix.lower() in STRUCTURED_SUFFIXES
     try:
         data = yaml.safe_load(text)
         if isinstance(data, dict):
@@ -20,8 +27,17 @@ def detect_format(file_path: Path) -> str:
                 return "swagger"
             if _is_postman_collection(data):
                 return "postman"
-    except yaml.YAMLError:
-        pass
+    except yaml.YAMLError as error:
+        if is_structured_file:
+            raise FormatDetectionError(
+                f"invalid YAML/JSON in structured API document: {error}"
+            ) from error
+
+    if is_structured_file:
+        raise FormatDetectionError(
+            "unsupported structured API document: expected OpenAPI/Swagger "
+            "or Postman Collection"
+        )
 
     return "markdown"
 

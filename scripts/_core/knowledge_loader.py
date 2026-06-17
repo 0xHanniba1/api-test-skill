@@ -20,8 +20,11 @@ def select_skills(endpoint: ApiEndpoint, depth: str) -> list[str]:
     if _has_pagination_params(endpoint):
         skills.append("pagination.md")
 
-    if endpoint.content_type == "multipart/form-data":
+    if _has_file_upload_content_type(endpoint):
         skills.append("file-upload.md")
+
+    if endpoint.auth_required:
+        skills.append("auth-testing.md")
 
     if depth == "full":
         for s in ("auth-testing.md", "idempotency.md"):
@@ -35,12 +38,25 @@ def load_skill_content(skill_names: list[str]) -> str:
     """Load and concatenate the content of the given knowledge files."""
     parts = []
     for name in skill_names:
-        path = KNOWLEDGE_DIR / name
-        if path.exists():
-            parts.append(path.read_text(encoding="utf-8"))
+        path = _resolve_knowledge_path(name)
+        parts.append(path.read_text(encoding="utf-8"))
     return "\n\n---\n\n".join(parts)
+
+
+def _resolve_knowledge_path(name: str) -> Path:
+    path = (KNOWLEDGE_DIR / name).resolve()
+    if not path.is_relative_to(KNOWLEDGE_DIR.resolve()) or not path.is_file():
+        raise ValueError(f"Unknown knowledge module: {name}")
+    return path
 
 
 def _has_pagination_params(endpoint: ApiEndpoint) -> bool:
     param_names = {p.name.lower() for p in endpoint.parameters}
     return bool(param_names & PAGINATION_PARAM_NAMES)
+
+
+def _has_file_upload_content_type(endpoint: ApiEndpoint) -> bool:
+    return "multipart/form-data" in {
+        endpoint.content_type,
+        *endpoint.content_types,
+    }

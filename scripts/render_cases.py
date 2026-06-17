@@ -22,9 +22,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
+from pydantic import ValidationError
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from _core.endpoints import EndpointListError, validate_endpoint_list  # noqa: E402
 from _core.parser.base import ApiEndpoint  # noqa: E402
 from _core.testcase_document import (  # noqa: E402
     TestCaseDocumentError,
@@ -33,9 +37,64 @@ from _core.testcase_document import (  # noqa: E402
 )
 
 
+class InputLoadError(ValueError):
+    """Raised when input JSON cannot be loaded or validated."""
+
+
 def _load_endpoints(path: Path) -> list[ApiEndpoint]:
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [ApiEndpoint.model_validate(item) for item in data]
+    try:
+        data: Any = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise InputLoadError(f"cannot read endpoints file: {error}") from error
+    except json.JSONDecodeError as error:
+        raise InputLoadError(f"invalid endpoints JSON: {error}") from error
+
+    if not isinstance(data, list):
+        raise InputLoadError("endpoints JSON must be an array")
+
+    try:
+        endpoints = [ApiEndpoint.model_validate(item) for item in data]
+        validate_endpoint_list(endpoints)
+        return endpoints
+    except ValidationError as error:
+        raise InputLoadError(f"invalid endpoint schema: {error}") from error
+    except EndpointListError as error:
+        raise InputLoadError(str(error)) from error
+
+
+def _load_drafts_map(path: Path) -> dict[str, Any]:
+    try:
+        data: Any = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise InputLoadError(f"cannot read drafts file: {error}") from error
+    except json.JSONDecodeError as error:
+        raise InputLoadError(f"invalid drafts JSON: {error}") from error
+
+    if not isinstance(data, dict):
+        raise InputLoadError('drafts JSON must be an object keyed by "<METHOD> <PATH>"')
+    return data
+
+
+def _endpoint_key(endpoint: ApiEndpoint) -> str:
+    return f"{endpoint.method} {endpoint.path}"
+
+
+def _validate_draft_keys(
+    endpoints: list[ApiEndpoint], drafts_map: dict[str, Any]
+) -> None:
+    expected_keys = [_endpoint_key(endpoint) for endpoint in endpoints]
+    expected = set(expected_keys)
+    actual = set(drafts_map)
+    missing = [key for key in expected_keys if key not in actual]
+    unexpected = sorted(actual - expected)
+
+    errors = []
+    if missing:
+        errors.append(f"missing drafts for endpoint(s): {', '.join(missing)}")
+    if unexpected:
+        errors.append(f"unexpected drafts for endpoint(s): {', '.join(unexpected)}")
+    if errors:
+        raise InputLoadError("; ".join(errors))
 
 
 def main() -> int:
@@ -51,19 +110,21 @@ def main() -> int:
     ap.add_argument("--start-index", type=int, default=1)
     args = ap.parse_args()
 
-    endpoints = _load_endpoints(args.endpoints)
-    drafts_map = json.loads(args.drafts.read_text(encoding="utf-8"))
+    try:
+        endpoints = _load_endpoints(args.endpoints)
+        drafts_map = _load_drafts_map(args.drafts)
+        _validate_draft_keys(endpoints, drafts_map)
+    except InputLoadError as error:
+        print(f"Failed to load input: {error}", file=sys.stderr)
+        return 1
 
     idx = args.start_index
     sections = []
     try:
         for ep in endpoints:
-            key = f"{ep.method} {ep.path}"
-            raw = drafts_map.get(key)
-            if raw is None:
-                print(f"Missing drafts for endpoint: {key}", file=sys.stderr)
-                return 1
-            drafts = parse_drafts(json.dumps(raw, ensure_ascii=False))
+            drafts = parse_drafts(
+                json.dumps(drafts_map[_endpoint_key(ep)], ensure_ascii=False)
+            )
             section_md, idx = render_endpoint_section(ep, drafts, idx)
             sections.append(section_md)
     except TestCaseDocumentError as error:

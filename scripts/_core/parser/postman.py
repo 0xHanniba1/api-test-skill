@@ -12,9 +12,15 @@ from .base import ApiEndpoint, Param
 def parse_postman(file_path: Path) -> list[ApiEndpoint]:
     """Parse a Postman Collection v2.1 file into normalized endpoints."""
     collection = json.loads(file_path.read_text(encoding="utf-8"))
+    if not isinstance(collection, dict):
+        raise ValueError("Postman collection must be a mapping")
+    items = collection.get("item", [])
+    if not isinstance(items, list):
+        raise ValueError("Postman collection item must be a list")
+
     endpoints: list[ApiEndpoint] = []
     _parse_items(
-        collection.get("item", []),
+        items,
         endpoints,
         inherited_auth=collection.get("auth"),
         folder_tags=(),
@@ -29,6 +35,8 @@ def _parse_items(
     folder_tags: tuple[str, ...],
 ) -> None:
     for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("Postman collection item entries must be mappings")
         if "item" in item:
             folder_auth = item.get("auth", inherited_auth)
             folder_name = item.get("name")
@@ -43,7 +51,7 @@ def _parse_request(
     inherited_auth: dict[str, Any] | None,
     folder_tags: tuple[str, ...],
 ) -> ApiEndpoint:
-    request = item["request"]
+    request = _normalize_request(item["request"])
     url = request.get("url", {})
     headers = [
         header for header in request.get("header", []) if not header.get("disabled")
@@ -69,6 +77,14 @@ def _parse_request(
         tags=list(folder_tags),
         content_types=content_types or ["application/json"],
     )
+
+
+def _normalize_request(request: Any) -> dict[str, Any]:
+    if isinstance(request, str):
+        return {"method": "GET", "url": request}
+    if isinstance(request, dict):
+        return request
+    raise ValueError("Postman item request must be a mapping or URL string")
 
 
 def _parse_path(url: Any) -> str:
@@ -97,8 +113,22 @@ def _path_from_raw(raw: str) -> str:
     else:
         path = re.sub(r"^\{\{[^}]+\}\}", "", raw)
         if not path.startswith("/"):
-            path = "/" + path.split("/", 1)[-1] if "/" in path else "/"
+            path = _relative_or_host_path(path)
     return _normalize_path_variables(path or "/")
+
+
+def _relative_or_host_path(raw: str) -> str:
+    if not raw:
+        return "/"
+    first_segment, separator, rest = raw.partition("/")
+    looks_like_host = (
+        "." in first_segment
+        or ":" in first_segment
+        or first_segment.lower() == "localhost"
+    )
+    if looks_like_host:
+        return f"/{rest}" if separator and rest else "/"
+    return f"/{raw}"
 
 
 def _normalize_path_variables(path: str) -> str:
