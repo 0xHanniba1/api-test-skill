@@ -2,39 +2,58 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Agent-driven skill that turns an API document into test cases and runnable
-**pytest + requests** code. The LLM work is done by the **host agent** (Claude
-Code / Codex) — this project ships only deterministic scripts plus reusable test
-knowledge, and needs **no API keys**.
+`api-test-skill` is a Codex / Claude Code skill for turning API documents into
+reviewable test cases and runnable **pytest + requests** code.
 
-Companion to **api-test-gen** (the standalone CLI version): same domain,
-different shape. `api-test-gen` calls an LLM itself; `api-test-skill` hands the
-LLM work to the agent and keeps only the parts that must be reliable and
-repeatable.
+The skill gives the agent a repeatable workflow: parse structured specs, plan
+filenames, select API-testing knowledge, render numbered test cases, and validate
+the generated output.
 
-## Deterministic (scripts) vs. agent's job
+If you want the same workflow as a standalone command-line tool, use
+**api-test-gen**. This repo is the skill version.
 
-| Deterministic — `scripts/` | Agent's judgment |
+## Responsibility split
+
+| `scripts/` handle | The host agent handles |
 |---|---|
-| Parse Swagger/OpenAPI/Postman → endpoints | Read free-form docs, extract endpoints |
-| Filenames, tag grouping, knowledge selection | Design which test cases matter |
-| TC-XXX numbering, canonical Markdown rendering | Write pytest/requests code |
-| Syntax / YAML / pytest-collect validation | Self-heal failing validation |
+| Parse Swagger / OpenAPI / Postman into endpoints | Read free-form or Markdown docs and extract endpoints |
+| Plan filenames, tag grouping, and knowledge modules | Decide which test cases are worth writing |
+| Assign TC-XXX ids and render canonical Markdown | Write pytest + requests code |
+| Validate Python syntax, YAML, and optional pytest collection | Read validation errors and fix the generated output |
 
-## Usage (Claude Code / Codex)
+## Quick start
 
-The agent reads `SKILL.md` → `instructions/workflow.md`, then:
+The agent should read `SKILL.md`, then `instructions/workflow.md`, then run the
+workflow:
 
 ```bash
-uv sync                                          # one-time: install pydantic/pyyaml/pytest
+uv sync
 uv run python scripts/parse.py api.yaml > endpoints.json
 uv run python scripts/plan_files.py endpoints.json --depth quick --arch flat
-# agent reads instructions/ + knowledge/, designs drafts.json
+
+# The agent reads the plan, instructions/, and selected knowledge/*.md,
+# then designs drafts.json.
 uv run python scripts/render_cases.py --endpoints endpoints.json --drafts drafts.json -o out/testcases.md
-# agent writes code per instructions/code-gen-*.md
-uv run python scripts/validate.py out/           # syntax + YAML; agent reads errors, fixes, repeats
-# uv run python scripts/validate.py out/ --collect  # also check imports/collection (needs `pip install requests` first)
+
+# The agent writes generated pytest code into out/.
+uv run python scripts/validate.py out/
 ```
+
+`parse.py` intentionally handles only structured API docs. For free-form or
+Markdown docs, the agent reads the document directly and hand-writes
+`endpoints.json` in the same schema.
+
+Add `--collect` only after installing the generated project's runtime
+dependencies. For flat output, that is usually `pytest requests`. For layered
+output, use the generated `requirements.txt`, which includes `pytest`,
+`requests`, and `pyyaml`.
+
+## Output modes
+
+- `--arch flat`: writes `<out>/conftest.py` plus one `test_*.py` file per
+  endpoint.
+- `--arch layered`: writes `base/`, `data/`, `api/`, `services/`, `tests/`,
+  `Jenkinsfile`, and `requirements.txt`, grouped by API tag.
 
 ## Layout
 
@@ -51,14 +70,25 @@ api-test-skill/
 └── tests/                # tests for the deterministic core
 ```
 
-## Setup
+## Development
 
-Python ≥ 3.11 with `pydantic` + `pyyaml` (and `pytest` to collect/run generated
-tests). With uv: `uv sync`, then prefix script calls with `uv run`.
+Python 3.11 or newer is required.
 
-## Why no LLM in this project
+```bash
+uv sync --dev
+uv run pytest
+uv run ruff check .
+```
 
-Parsing specs, naming files, numbering cases, and checking syntax must be
-reliable — those are scripts. Choosing which cases matter and writing the code
-need judgment — that's the agent. Self-healing is native: generate → `validate.py`
-→ read errors → fix, with no hidden LLM-repair pass.
+The skill scripts depend on `pydantic` and `pyyaml`. Project tests and linting
+use `pytest` and `ruff`. Generated test projects have their own runtime
+dependencies, usually `pytest`, `requests`, and sometimes `pyyaml`.
+
+## Design
+
+Parsing specs, naming files, numbering cases, and checking syntax should be
+repeatable, so they live in scripts. Choosing test coverage and writing test code
+requires judgment, so the host agent does that work.
+
+The repair loop is explicit: generate, run `validate.py`, read the errors, fix
+the output, and repeat.
